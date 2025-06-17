@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Plex limiter every 5s
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

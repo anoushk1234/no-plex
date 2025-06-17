@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime, timezone, time as dtime
 import os
 
-KILL_MESSAGE = os.getenv("KILL_MESSAGE", "Stop watching and get to work") 
+KILL_MESSAGE = os.getenv("KILL_MESSAGE", "HOOOLY JESUS! WHAT IS THAT?! WHAT THE FUCK IS THAT?! WHAT IS THAT PRIVATE PYLE?") 
 TAUTULLI_URL = os.getenv("TAUTULLI_URL","http://127.0.0.1:8181")
 API_KEY = os.getenv("TAUTULLI_API_KEY", "") 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

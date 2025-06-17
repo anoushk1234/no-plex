@@ -51,7 +51,7 @@ Edit `.env` and set:
 
 These values are loaded automatically by `plex-limit-state.py`.
 
-## Mandatory: Time-Based Execution with systemd
+## Configure systemd
 
 ### 1. Edit `plex_limit_wrapper.sh`
 

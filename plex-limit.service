@@ -1,0 +1,6 @@
+[Unit]
+Description=Kill Plex sessions after limit
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /path/to/your/folder/plex_limit_wrapper.sh

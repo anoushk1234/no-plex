@@ -78,14 +78,18 @@ def update_segment_duration(segment_id, duration):
     conn.close()
 
 
-def get_total_watch_time_today(user_id):
-    try:
-        r = requests.get(f'{TAUTULLI_URL}/api/v2?apikey={API_KEY}&cmd=get_user_watch_time_stats&user_id={user_id}&stats_type=time_watched&time_range=today&grouping=full')
-        rows = r.json().get("response", {}).get("data", [])
-        return sum(row.get("total_time", 0) for row in rows if row.get("query_days", -1) == 0) / 60
-    except Exception as e:
-        log(f"[ERROR] Failed to fetch watch time: {e}")
-        return 0
+def get_total_watch_time_today_from_db(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    cur.execute("""
+        SELECT SUM(duration_minutes)
+        FROM session_tracker
+        WHERE user_id = ? AND DATE(start_time) = ?
+    """, (user_id, today))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] or 0
 
 
 def get_active_sessions():
@@ -141,7 +145,8 @@ def main():
 
         segment_id, start_time = get_or_create_active_segment(session_id, user_id, username, rating_key)
         session_duration = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
-        total_today = get_total_watch_time_today(user_id) + session_duration
+        # total_today = get_total_watch_time_from_tautulli(user_id) + session_duration
+        total_today = get_total_watch_time_today_from_db(user_id) + session_duration
 
         log(f"[INFO] Session duration: {session_duration:.2f} min, Total today: {total_today:.2f} min")
 

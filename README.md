@@ -5,7 +5,7 @@
 Unlike existing solutions (e.g. JBOPS), it actively monitors stream duration and forcefully terminates sessions once limits are exceeded — even mid-playback.
 
 ## Features
- 
+
 - Session enforcement:
   - Daily total watch time limit (e.g., 60 minutes)
   - Per-session watch limit (e.g., 30 minutes max per session)

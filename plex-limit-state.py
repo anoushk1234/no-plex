@@ -62,7 +62,7 @@ def get_or_create_active_segment(session_id, user_id, username, rating_key):
         segment_id, start_time = row
         time_gap = (datetime.now(timezone.utc) - datetime.fromisoformat(start_time)).total_seconds()
         if time_gap > PAUSE_THRESHOLD:
-            mark_session_saturated(segment_id)
+            mark_segment_saturated(segment_id)
             # mark_segment_terminated(segment_id) not doing this since we chain all them and then terminate
             start_time = datetime.now(timezone.utc).isoformat()
             cur.execute('''
@@ -101,7 +101,19 @@ def mark_segment_terminated(segment_id):
     conn.commit()
     conn.close()
 
-def mark_session_saturated(segment_id):
+def mark_session_terminated(session_id, user_id, rating_key):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE session_tracker
+        SET is_terminated = 1
+        WHERE session_id = ?
+         AND user_id = ?
+         AND rating_key = ?
+    """, (session_id,user_id,rating_key))
+    conn.commit()
+    conn.close()
+def mark_segment_saturated(segment_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute('''
@@ -204,13 +216,14 @@ def main():
         sum_session_duration = get_total_unterminated_duration(session_id,user_id,rating_key);
         total_today = terminated_stream_dur_today + sum_session_duration + sub_session_duration
         log(f"[INFO] termd_today: {terminated_stream_dur_today:.2f}, Sum_sesh: {sum_session_duration:.2f} min, Sub_sesh: {sub_session_duration:.2f} min, Total today: {total_today:.2f} min")
+        log(total_today > MAX_TOTAL_MINUTES)
         if total_today > MAX_TOTAL_MINUTES:
             # update_segment_duration(segment_id, session_duration)
-            mark_segment_terminated(segment_id)
+            mark_session_terminated(session_id,user_id,rating_key)
             terminate_session(session_id, f"You've hit your daily limit of {MAX_TOTAL_MINUTES} minutes. {KILL_MESSAGE}")
         elif sum_session_duration > MAX_SESSION_DURATION_MINUTES:
             # update_segment_duration(segment_id, session_duration)
-            mark_segment_terminated(segment_id)
+            mark_session_terminated(session_id,user_id,rating_key)
             terminate_session(session_id, f"Session exceeded {MAX_SESSION_DURATION_MINUTES} minutes. {KILL_MESSAGE}")
 
 

@@ -13,6 +13,7 @@ LOG_FILE = os.path.join(SCRIPT_DIR, "plex_session_tracker.log")
 MAX_SESSION_DURATION_MINUTES = os.getenv("MAX_SESSION_DURATION_MINUTES",30)
 MAX_TOTAL_MINUTES = os.getenv("MAX_TOTAL_MINUTES",60)
 ENABLE_BEDTIME = os.getenv("ENABLE_BEDTIME", 0)
+PAUSE_THRESHOLD = os.getenv("PAUSE_THRESHOLD", 120)  # Since tautulli api doesnt tell us if user closed stream before time, this is a timeout.
 
 def log(message):
     with open(LOG_FILE, "a") as f:
@@ -30,7 +31,9 @@ def init_db():
             username TEXT,
             rating_key TEXT,
             start_time TEXT,
-            duration_minutes REAL DEFAULT 0
+            duration_minutes REAL DEFAULT 0,
+            is_terminated INTEGER NOT NULL DEFAULT 0,
+            is_saturated INTEGER NOT NULL DEFAULT 0
         )
     ''')
     conn.commit()
@@ -51,12 +54,22 @@ def get_or_create_active_segment(session_id, user_id, username, rating_key):
     cur = conn.cursor()
     cur.execute('''
         SELECT id, start_time FROM session_tracker
-        WHERE session_id = ? AND rating_key = ? AND duration_minutes = 0
+        WHERE session_id = ? AND rating_key = ? AND is_terminated = 0 AND is_saturated = 0;
     ''', (session_id, rating_key))
     row = cur.fetchone()
-
+    # AND duration_minutes = 0
     if row:
         segment_id, start_time = row
+        time_gap = (datetime.now(timezone.utc) - datetime.fromisoformat(start_time)).total_seconds()
+        if time_gap > PAUSE_THRESHOLD:
+            mark_session_saturated(segment_id)
+            # mark_segment_terminated(segment_id) not doing this since we chain all them and then terminate
+            start_time = datetime.now(timezone.utc).isoformat()
+            cur.execute('''
+                INSERT INTO session_tracker (session_id, user_id, username, rating_key, start_time)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (session_id, user_id, username, rating_key, start_time))
+            segment_id = cur.lastrowid
     else:
         start_time = datetime.now(timezone.utc).isoformat()
         cur.execute('''
@@ -77,6 +90,27 @@ def update_segment_duration(segment_id, duration):
     conn.commit()
     conn.close()
 
+def mark_segment_terminated(segment_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE session_tracker
+        SET is_terminated = 1
+        WHERE id = ?
+    """, (segment_id,))
+    conn.commit()
+    conn.close()
+
+def mark_session_saturated(segment_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute('''
+        UPDATE session_tracker
+        SET is_saturated = 1
+        WHERE id = ?
+    ''', (segment_id,))
+    conn.commit()
+    conn.close()
 
 def get_total_watch_time_today_from_db(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -85,7 +119,7 @@ def get_total_watch_time_today_from_db(user_id):
     cur.execute("""
         SELECT SUM(duration_minutes)
         FROM session_tracker
-        WHERE user_id = ? AND DATE(start_time) = ?
+        WHERE user_id = ? AND DATE(start_time) = ? AND is_terminated = 1
     """, (user_id, today))
     row = cur.fetchone()
     conn.close()
@@ -100,6 +134,22 @@ def get_active_sessions():
         log(f"[ERROR] Failed to fetch sessions: {e}")
         return []
 
+def get_total_unterminated_duration(session_id, user_id, rating_key):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT SUM(duration_minutes)
+        FROM session_tracker
+        WHERE session_id = ?
+          AND user_id = ?
+          AND rating_key = ?
+          AND is_saturated = 1
+          AND is_terminated = 0
+    ''', (session_id, user_id, rating_key))
+    row = cur.fetchone()
+    conn.close()
+    # log(f"[INFO] {row} {session_id} {user_id} {rating_key}")
+    return row[0] if row and row[0] else 0.0
 
 def is_blocked_time():
     now = datetime.now().time()
@@ -119,12 +169,9 @@ def terminate_session(session_id, reason):
 
 
 def main():
-    if not API_KEY:
-        print("Add TAUTULLI_API_KEY to .env")
-        return
     init_db()
     now = datetime.now()
-    
+
     if now.hour == 23 and now.minute == 59:
         cleanup_db()
         return
@@ -138,26 +185,33 @@ def main():
         user_id = session['user_id']
         username = session['username']
         rating_key = session['rating_key']
+        state = session['state'] # playing
+
 
         if ENABLE_BEDTIME and is_blocked_time():
             terminate_session(session_id, f"Blocked hours (10:30 PM – 1:00 PM). {KILL_MESSAGE}")
             continue
 
+
         segment_id, start_time = get_or_create_active_segment(session_id, user_id, username, rating_key)
-        session_duration = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
+        sub_session_duration = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
         # total_today = get_total_watch_time_from_tautulli(user_id) + session_duration
-        total_today = get_total_watch_time_today_from_db(user_id) + session_duration
+        terminated_stream_dur_today = get_total_watch_time_today_from_db(user_id)
 
-        log(f"[INFO] Session duration: {session_duration:.2f} min, Total today: {total_today:.2f} min")
 
+        update_segment_duration(segment_id, sub_session_duration)
+        sum_session_duration = get_total_unterminated_duration(session_id,user_id,rating_key);
+        total_today = terminated_stream_dur_today + sum_session_duration + sub_session_duration
+        log(f"[INFO] termd_today: {terminated_stream_dur_today:.2f}, Sum_sesh: {sum_session_duration:.2f} min, Sub_sesh: {sub_session_duration:.2f} min, Total today: {total_today:.2f} min")
         if total_today > MAX_TOTAL_MINUTES:
-            update_segment_duration(segment_id, session_duration)
+            # update_segment_duration(segment_id, session_duration)
+            mark_segment_terminated(segment_id)
             terminate_session(session_id, f"You've hit your daily limit of {MAX_TOTAL_MINUTES} minutes. {KILL_MESSAGE}")
-        elif session_duration > MAX_SESSION_DURATION_MINUTES:
-            update_segment_duration(segment_id, session_duration)
+        elif sum_session_duration > MAX_SESSION_DURATION_MINUTES:
+            # update_segment_duration(segment_id, session_duration)
+            mark_segment_terminated(segment_id)
             terminate_session(session_id, f"Session exceeded {MAX_SESSION_DURATION_MINUTES} minutes. {KILL_MESSAGE}")
 
 
 if __name__ == "__main__":
     main()
-

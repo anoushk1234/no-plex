@@ -191,7 +191,8 @@ def main():
         if ENABLE_BEDTIME and is_blocked_time():
             terminate_session(session_id, f"Blocked hours (10:30 PM – 1:00 PM). {KILL_MESSAGE}")
             continue
-
+        if state and state != 'playing':
+            continue
 
         segment_id, start_time = get_or_create_active_segment(session_id, user_id, username, rating_key)
         sub_session_duration = (datetime.now(timezone.utc) - start_time).total_seconds() / 60

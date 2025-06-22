@@ -12,6 +12,7 @@ Unlike existing solutions (e.g. JBOPS), it actively monitors stream duration and
 - Time-of-day blocking (e.g., restrict streaming between 10:30 PM and 1:00 PM)
 - SQLite-based session tracking so sessions are tracked even while watching unlike JBOPS.
 - Includes one off day( Sunday )
+- Accounts for playback pauses and buffering.
 - Systemd + timer-based execution every 5 seconds so it works even with reboots.
 
 ## Requirements

@@ -198,7 +198,7 @@ def get_total_unterminated_duration(session_id, user_id, rating_key):
           AND is_saturated = 1
           AND is_terminated = 0
     """,
-        (session_id, user_id, rating_key),
+        (session_id, user_id),
     )
     row = cur.fetchone()
     conn.close()

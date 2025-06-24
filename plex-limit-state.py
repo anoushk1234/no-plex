@@ -193,12 +193,11 @@ def get_total_unterminated_duration(session_id, user_id, rating_key):
         """
         SELECT SUM(duration_minutes)
         FROM session_tracker
-        WHERE session_id = ?
-          AND user_id = ?
+        WHERE user_id = ?
           AND is_saturated = 1
           AND is_terminated = 0
     """,
-        (session_id, user_id),
+        (user_id, ),
     )
     row = cur.fetchone()
     conn.close()

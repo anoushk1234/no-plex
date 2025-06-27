@@ -135,11 +135,11 @@ def mark_session_terminated(session_id, user_id, rating_key):
         """
         UPDATE session_tracker
         SET is_terminated = 1
-        WHERE session_id = ?
+        WHERE is_terminated = 0
+         AND is_saturated = 1
          AND user_id = ?
-         AND rating_key = ?
     """,
-        (session_id, user_id, rating_key),
+        (user_id, ),
     )
     conn.commit()
     conn.close()
